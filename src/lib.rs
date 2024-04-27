@@ -124,19 +124,19 @@ impl Default for Draggable {
 }
 
 /// Component used to designate when an object is actively being dragged.
-#[derive(Component)]
+#[derive(Component, Default, Debug)]
 pub struct Dragging {
     pub hovering: Option<Entity>,
 }
 
 /// Component used to designate when an object is waiting to be able to be dragged.
-#[derive(Component)]
+#[derive(Component, Default, Debug)]
 pub struct AwaitingDrag {
     pub ends: f64,
 }
 
 /// Component that may be attached to anything with a transform and GlobalTransform component to allow it to be detected when a draggable is dropped over it.
-#[derive(Component)]
+#[derive(Component, Default, Debug)]
 pub struct Receiver;
 
 /// Plugin that contains systems and events for dragging and dropping.
@@ -175,8 +175,8 @@ fn startdrag(
     )>,
     dragging: Query<&Dragging>,
     awaiting: Query<&AwaitingDrag>,
-    buttons: Res<Input<MouseButton>>,
-    keys: Res<Input<KeyCode>>,
+    buttons: Res<ButtonInput<MouseButton>>,
+    keys: Res<ButtonInput<KeyCode>>,
     q_windows: Query<&Window, With<PrimaryWindow>>,
     q_camera: Query<(&Camera, &GlobalTransform)>,
     assets: Res<Assets<Image>>,
@@ -244,8 +244,8 @@ fn awaitdrag(
     mut commands: Commands,
     q_draggable: Query<(Entity, &Draggable, &AwaitingDrag)>,
     mut ew_dragged: EventWriter<Dragged>,
-    buttons: Res<Input<MouseButton>>,
-    keys: Res<Input<KeyCode>>,
+    buttons: Res<ButtonInput<MouseButton>>,
+    keys: Res<ButtonInput<KeyCode>>,
     time: Res<Time<Real>>,
 ) {
     let inputs = get_inputs(&keys, &buttons);
@@ -287,8 +287,8 @@ fn dragging(
         ),
         With<Receiver>,
     >,
-    buttons: Res<Input<MouseButton>>,
-    keys: Res<Input<KeyCode>>,
+    buttons: Res<ButtonInput<MouseButton>>,
+    keys: Res<ButtonInput<KeyCode>>,
     q_windows: Query<&Window, With<PrimaryWindow>>,
     q_camera: Query<(&Camera, &GlobalTransform)>,
     assets: Res<Assets<Image>>,
@@ -369,8 +369,8 @@ fn hovering(
         Entity,
         Option<&Node>,
     )>,
-    buttons: Res<Input<MouseButton>>,
-    keys: Res<Input<KeyCode>>,
+    buttons: Res<ButtonInput<MouseButton>>,
+    keys: Res<ButtonInput<KeyCode>>,
     q_windows: Query<&Window, With<PrimaryWindow>>,
     q_camera: Query<(&Camera, &GlobalTransform)>,
     mut uistate: ResMut<UiState>,
@@ -434,8 +434,8 @@ fn hovering(
 #[allow(clippy::complexity)]
 fn drop(
     mut commands: Commands,
-    buttons: Res<Input<MouseButton>>,
-    keys: Res<Input<KeyCode>>,
+    buttons: Res<ButtonInput<MouseButton>>,
+    keys: Res<ButtonInput<KeyCode>>,
     q_receivers: Query<
         (
             &GlobalTransform,
@@ -536,7 +536,7 @@ fn is_in_bounds(
     }
 }
 
-fn get_inputs(keys: &Res<Input<KeyCode>>, buttons: &Res<Input<MouseButton>>) -> InputFlags {
+fn get_inputs(keys: &Res<ButtonInput<KeyCode>>, buttons: &Res<ButtonInput<MouseButton>>) -> InputFlags {
     (InputFlags::LeftClick * (buttons.pressed(MouseButton::Left) as u8))
         | (InputFlags::RightClick * (buttons.pressed(MouseButton::Right) as u8))
         | (InputFlags::MiddleClick * (buttons.pressed(MouseButton::Middle) as u8))
