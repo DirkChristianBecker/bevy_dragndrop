@@ -28,6 +28,25 @@ impl Mul<u8> for InputFlags {
     }
 }
 
+#[derive(Resource, Default)]
+pub struct UiState {
+    hovered_element: Option<Entity>,
+}
+
+impl UiState {
+    pub fn set_hovering(&mut self, element: Entity) {
+        self.hovered_element = Some(element);
+    }
+
+    pub fn reset_hovering(&mut self) {
+        self.hovered_element = None;
+    }
+
+    pub fn get_hovered_element(&self) -> &Option<Entity> {
+        &self.hovered_element
+    }
+}
+
 /// Event that is sent when an entity is released
 #[derive(Event)]
 pub struct Dropped {
@@ -58,12 +77,25 @@ pub struct DragAwait {
 }
 
 /// Event that is sent when an entity is hovered over a new receiver, and when it is dropped.
+/// This event only fires, if an draggable is beeing dragged.
 #[derive(Event)]
-pub struct HoveredChange {
+pub struct DragHoveredChange {
     /// The entity that is being dragged
     pub hovered: Entity,
     /// The entity that is now being hovered over, None if no receivers are being hovered over or if it has been dropped.
     pub receiver: Option<Entity>,
+    /// The last entity that was being hovered over if any
+    pub prevreceiver: Option<Entity>,
+    /// Inputs at the time of the event being sent
+    pub inputs: InputFlags,
+}
+
+/// Event that is sent when an entity is hovered over a new receiver.
+/// This event fires, all the time even if no element is beeing dragged.
+#[derive(Event)]
+pub struct HoveredChange {
+    /// The entity that is now being hovered over, None if no receivers are being hovered over.
+    pub hovered: Option<Entity>,
     /// The last entity that was being hovered over if any
     pub prevreceiver: Option<Entity>,
     /// Inputs at the time of the event being sent
@@ -112,6 +144,7 @@ pub struct DragPlugin;
 
 impl Plugin for DragPlugin {
     fn build(&self, app: &mut App) {
+        app.insert_resource::<UiState>(UiState::default());
         app.add_systems(
             Update,
             (
@@ -119,15 +152,18 @@ impl Plugin for DragPlugin {
                 dragging.before(drop),
                 drop.after(dragging),
                 awaitdrag,
+                hovering,
             ),
         )
         .add_event::<Dropped>()
         .add_event::<Dragged>()
         .add_event::<DragAwait>()
+        .add_event::<DragHoveredChange>()
         .add_event::<HoveredChange>();
     }
 }
 
+#[allow(clippy::complexity)]
 fn startdrag(
     mut commands: Commands,
     q_draggable: Query<(
@@ -232,6 +268,7 @@ fn awaitdrag(
     }
 }
 
+#[allow(clippy::complexity)]
 fn dragging(
     q_parent: Query<&GlobalTransform>,
     mut q_dragging: Query<(
@@ -255,7 +292,7 @@ fn dragging(
     q_windows: Query<&Window, With<PrimaryWindow>>,
     q_camera: Query<(&Camera, &GlobalTransform)>,
     assets: Res<Assets<Image>>,
-    mut ew_hover: EventWriter<HoveredChange>,
+    mut ew_hover: EventWriter<DragHoveredChange>,
 ) {
     let inputs = get_inputs(&keys, &buttons);
     let window = q_windows.single();
@@ -301,7 +338,7 @@ fn dragging(
                             return;
                         }
                     }
-                    ew_hover.send(HoveredChange {
+                    ew_hover.send(DragHoveredChange {
                         hovered: entity,
                         prevreceiver: dragging.hovering,
                         receiver: Some(receiver),
@@ -312,7 +349,7 @@ fn dragging(
                 }
             }
             if dragging.hovering.is_some() {
-                ew_hover.send(HoveredChange {
+                ew_hover.send(DragHoveredChange {
                     hovered: entity,
                     prevreceiver: dragging.hovering,
                     receiver: None,
@@ -324,6 +361,77 @@ fn dragging(
     }
 }
 
+#[allow(clippy::complexity)]
+fn hovering(
+    q_receivers: Query<(
+        &GlobalTransform,
+        Option<&Handle<Image>>,
+        Entity,
+        Option<&Node>,
+    )>,
+    buttons: Res<Input<MouseButton>>,
+    keys: Res<Input<KeyCode>>,
+    q_windows: Query<&Window, With<PrimaryWindow>>,
+    q_camera: Query<(&Camera, &GlobalTransform)>,
+    mut uistate: ResMut<UiState>,
+    assets: Res<Assets<Image>>,
+    mut ew_hover: EventWriter<HoveredChange>,
+) {
+    let inputs = get_inputs(&keys, &buttons);
+    let window = q_windows.single();
+    let (camera, camera_transform) = q_camera.single();
+    let mut previous: Option<Entity> = None;
+    if let Some(r) = *uistate.get_hovered_element() {
+        previous = Some(r);
+    }
+
+    for (gtransform, image_handle, entity, node) in q_receivers.iter() {
+        if let Some(logical_position) = window.cursor_position() {
+            let world_position = camera
+                .viewport_to_world(camera_transform, logical_position)
+                .map(|ray| ray.origin.truncate())
+                .unwrap();
+            // let mut mat = gtransform.compute_matrix();
+            // mat = mat.inverse();
+
+            if is_in_bounds(
+                gtransform,
+                image_handle,
+                node,
+                &assets,
+                logical_position,
+                world_position,
+            ) {
+                if let Some(r) = previous {
+                    if r == entity {
+                        return;
+                    }
+                }
+
+                uistate.set_hovering(entity);
+                let event = HoveredChange {
+                    hovered: Some(entity),
+                    prevreceiver: previous,
+                    inputs,
+                };
+
+                ew_hover.send(event);
+                return;
+            }
+        }
+    }
+
+    let event = HoveredChange {
+        hovered: None,
+        prevreceiver: previous,
+        inputs,
+    };
+
+    uistate.reset_hovering();
+    ew_hover.send(event);
+}
+
+#[allow(clippy::complexity)]
 fn drop(
     mut commands: Commands,
     buttons: Res<Input<MouseButton>>,
@@ -341,7 +449,7 @@ fn drop(
     q_windows: Query<&Window, With<PrimaryWindow>>,
     q_camera: Query<(&Camera, &GlobalTransform)>,
     mut ew_dropped: EventWriter<Dropped>,
-    mut ew_hover: EventWriter<HoveredChange>,
+    mut ew_hover: EventWriter<DragHoveredChange>,
     assets: Res<Assets<Image>>,
 ) {
     let inputs = get_inputs(&keys, &buttons);
@@ -366,7 +474,7 @@ fn drop(
             ) {
                 for (drag_entity, draggable, dragging) in q_dragging.iter() {
                     if !inputs.intersects(draggable.required & InputFlags::Clicks) {
-                        ew_hover.send(HoveredChange {
+                        ew_hover.send(DragHoveredChange {
                             hovered: drag_entity,
                             receiver: None,
                             prevreceiver: dragging.hovering,
@@ -385,7 +493,7 @@ fn drop(
         }
         for (entity, draggable, dragging) in q_dragging.iter() {
             if !inputs.intersects(draggable.required & InputFlags::Clicks) {
-                ew_hover.send(HoveredChange {
+                ew_hover.send(DragHoveredChange {
                     hovered: entity,
                     receiver: None,
                     prevreceiver: dragging.hovering,

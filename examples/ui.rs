@@ -8,7 +8,10 @@ fn main() {
         .add_plugins(DefaultPlugins)
         .add_plugins(DragPlugin)
         .add_systems(Startup, setup)
-        .add_systems(Update, (on_dropped, on_dragged, on_hovered))
+        .add_systems(
+            Update,
+            (on_dropped, on_dragged, on_drag_hovered, on_hovered),
+        )
         .run();
 }
 
@@ -133,8 +136,8 @@ fn on_dragged(
     }
 }
 
-fn on_hovered(
-    mut er_hovered: EventReader<HoveredChange>,
+fn on_drag_hovered(
+    mut er_hovered: EventReader<DragHoveredChange>,
     mut q_receiver: Query<&mut BackgroundColor, With<Receiver>>,
 ) {
     for event in er_hovered.read() {
@@ -145,6 +148,25 @@ fn on_hovered(
         if let Some(receiver) = event.prevreceiver {
             let mut color = q_receiver.get_mut(receiver).unwrap();
             *color = Color::rgb(0.3, 0.3, 0.3).into();
+        }
+    }
+}
+
+fn on_hovered(
+    mut er_hovered: EventReader<HoveredChange>,
+    mut q_receiver: Query<&mut BackgroundColor, With<Receiver>>,
+) {
+    for event in er_hovered.read() {
+        if let Some(receiver) = event.hovered {
+            if let Ok(mut color) = q_receiver.get_mut(receiver) {
+                *color = Color::rgb(0.45, 0.45, 0.45).into();
+            } 
+        }
+
+        if let Some(receiver) = event.prevreceiver {
+            if let Ok(mut color) = q_receiver.get_mut(receiver) {
+                *color = Color::rgb(0.3, 0.3, 0.3).into();
+            }
         }
     }
 }

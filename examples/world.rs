@@ -153,7 +153,7 @@ fn on_dragged(
 }
 
 fn on_hovered(
-    mut er_hovered: EventReader<HoveredChange>,
+    mut er_hovered: EventReader<DragHoveredChange>,
     mut q_receiver: Query<&mut Sprite, With<Receiver>>,
 ) {
     for event in er_hovered.read() {
